@@ -8,11 +8,11 @@
     - `CNN`从原始输入数据中学习和自动提取特征的能力可以应用于时间序列预测问题. 可以将一系列观察结果视为一维图像, `CNN`模型可以读取该图像并提取其中特征, 创建时间序列的信息表示.
     - 常见的将CNN用于时间序列预测的例子包括`TCN`, `wavenet`, 它们是高度抗噪的模型, 并且能够提取信息丰富的深度特征.
 
-Q3 **在`CNN`中, `Max Pooling`与`Average Pooling`的优缺点是什么?**
+- Q3 **在`CNN`中, `Max Pooling`与`Average Pooling`的优缺点是什么?**
 
-- 卷积层参数误差造成估计均值的偏移, `max pooling`能减小这种误差, 邻域大小受限造成的估计值方差增大, `average`能减小这种误差. 也就是说, `average`对背景保留更好, `max`对纹理提取更好.对数字识别等任务, 一般使用`max-pooling`.
+    - 卷积层参数误差造成估计均值的偏移, `max pooling`能减小这种误差, 邻域大小受限造成的估计值方差增大, `average`能减小这种误差. 也就是说, `average`对背景保留更好, `max`对纹理提取更好.对数字识别等任务, 一般使用`max-pooling`.
 
-- 引用: [https://www.zhihu.com/question/34898241](https://www.zhihu.com/question/34898241)
+    - 引用: [https://www.zhihu.com/question/34898241](https://www.zhihu.com/question/34898241)
 
 Q4 **比较`CNN`和多层感知机`MLP`**
 
