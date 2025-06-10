@@ -182,3 +182,23 @@
 
 
 
+## Evaluation
+
+- 1 **Instrcution Following**
+    - 大模型的指令跟随能力(Instruction Following)指的是模型准确理解并准确执行用户以自然语言形式给出的具体指令或任务要求的能力. 主要是捕捉到指令背后的意图, 并根据意图生成恰当 相关 满足特定约束的输出.
+    - 大模型的指令跟随能力是通过指令微调(Instruction Tuning)强化的, 在这个过程中, 模型会在大量的"指令-输出"对的数据集上进行训练, 从而学会理解各种类型的指令并生成复合期望的回答.
+
+- 2 **评估指令跟随**
+    - 人工评估
+        - 由人类评估员根据一系列标准(准确性 完整性 相关性 遵循约束程度 有用性 无害性)对模型针对特定指令生成的输出进行打分或排序.
+
+    - 基于基准数据集
+        - IFEval(Instruction Following Eval), Nvidia提出, 评估模型遵循明确 可验证指令的能力.
+        - BIG-bench(Beyond the limitation Game benchmark).
+        - MT-bench.
+        - InFoBench(Instruction Following Benchmark), 引入了"分解需求遵循率"(Decomposed Requirements Following Ratio, DRFR)作为指标, 将复杂指令分解为更简单的标准, 以便进行更细致的分析.
+
+    - 模型评估(LLM as Judge/AI Feedback)
+        - 利用一个能力更强或经过专门训练的"裁判"大模型(如GPT-4)来评估目标模型的输出. "裁判"模型会收到原始指令 目标模型的输出, 以及评估标准, 然后对目标模型的表现进行打分或提供反馈.
+
+

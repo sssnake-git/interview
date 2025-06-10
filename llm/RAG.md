@@ -243,27 +243,51 @@
 
 - 12 **回复生成模块**
     - 回复生成策略
-        - 检索模块基于用户查询检索出相关的文本块, 回复生成模块让大模型利用检索出的相关信息, 
+        - 检索模块基于用户查询检索出相关的文本块, 回复生成模块让大模型利用检索出的相关信息, 从而生成对原始查询的回复.
+        - 策略1, 依次结合每个检索出的相关文本块, 每次不断修正生成的回复. 有多少个独立的相关文本块, 就会产生多少次大模型的调用.
+        - 策略2, 在每次大模型的调用中, 尽可能多的在prompt中填充文本块, 如果一个prompt填充不下, 则采用类似的操作构建多个prompt, 多个prompt的调用可以采用和前一种相同的回复修正策略.
+
+    - 回复生成prompt模板
+        - 可以指定大模型是否需要结合它自己的知识来生成回复等.
+        ```python
+        template = f'''
+        Context information is below.
+        ---------------------
+        {context_str}
+        ---------------------
+        Using both the context information and also using your own knowledge, answer the question: {query_str}
+
+        If the context isn't helpful, you can/don’t answer the question on your own.
+        '''
+        ```
+
+        - 下面的prompt模板让大模型不断修正已有的回复.
+        ```python
+        template = f'''
+        The original question is as follows: {query_str}
+        We have provided an existing answer: {existing_answer}
+        We have the opportunity to refine the existing answer (only if needed) with some more context below.
+        ------------
+        {context_str}
+        ------------
+        Using both the new context and your own knowledege, update or repeat the existing answer.
+        '''
+        ```
 
 
+## Code and Example
 
+- 1 **LlamaIndex**
+    - LlamaIndex 是一个服务于 LLM 应用的数据框架, 提供外部数据源的导入 结构化 索引 查询等功能, 这篇文章的结构和内容有很大一部分是参考 LlamaIndex 的文档, 文章中提到的很多模块 算法和策略, LlamaIndex 基本都有对应的实现, 提供了相关的高阶和低阶 API.
+        - 数据连接器: 能从多种数据源中导入数据, 有个专门的项目 Llama Hub, 可以连接多种来源的数据.
+        - 数据索引: 支持对读取的数据进行多种不同的索引, 便于后期的检索.
+        - 查询和对话引擎: 既支持单轮形式的查询交互引擎, 也支持多轮形式的对话交互引擎.
+        - 应用集成: 可以方便地与一些流行的应用进行集成, 比如 ChatGPT LangChain Flask Docker等.
+        ![Untitled](RAG/18.png)
 
-
-    
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+- 2 **LangChain**
+    - 相较于LlamaIndex更侧重于检索, LangChain覆盖的领域更广, 包含了大模型的链式应用 agent的创建管理等. LangChain中Retrieval模块的整体流程如图所示, 包含了数据的加载 变换 嵌入 向量存储和检索, 整体处理流程与LlamaIndex相同.
+    ![Untitled](RAG/19.png)
 
 
 
