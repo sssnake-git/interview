@@ -436,104 +436,92 @@
         }
         ```
 
-13.3编写测试用例
-单元测试: 编写测试用例, 在每次分配内存后进行释放, 并确认所有分配都得到了相应的释放. 这种方式可以帮助早期发现潜在的问题. 
+- 14 **如何实现一个 ring buffer 以及用途**
+    - 环形缓冲区(Ring Buffer)是一种固定大小的数据结构, 常用于实现数据的流式传输或临时存储. 在环形缓冲区中, 当到达缓冲区的末尾时, 它会回绕到开始部分, 从而形成一个“环”. 这种结构非常适合在生产者-消费者问题、网络数据包处理、音频数据流等场景中使用. 
 
-注意事项: 
+    ```c
+    #include <iostream>
+    #include <vector>
+    #include <stdexcept>
 
-定期进行代码审查, 以确保团队成员理解并遵循正确的内存管理实践. 
-对于复杂的数据结构, 如链表、树或图, 尤其要注意每个节点的动态分配和释放过程. 
-为避免遗漏, 使用智能指针(如 C++ 中的 std::unique_ptr 和 std::shared_ptr)自动管理资源. 
+    class RingBuffer {
+    public:
+        RingBuffer(size_t size) : buffer(size), maxSize(size), head(0), tail(0), full(false) {}
 
-14、如何实现一个ring buffer以及用途
-环形缓冲区(Ring Buffer)是一种固定大小的数据结构, 常用于实现数据的流式传输或临时存储. 在环形缓冲区中, 当到达缓冲区的末尾时, 它会回绕到开始部分, 从而形成一个“环”. 这种结构非常适合在生产者-消费者问题、网络数据包处理、音频数据流等场景中使用. 
-
-环形缓冲区的基本实现
-
-下面是一个简单的 C++ 实现, 包括基本操作如初始化、插入、删除和检查状态: 
-
-#include <iostream>
-#include <vector>
-#include <stdexcept>
-
-class RingBuffer {
-public:
-    RingBuffer(size_t size) : buffer(size), maxSize(size), head(0), tail(0), full(false) {}
-
-    void insert(int value) {
-        buffer[head] = value;
-        
-        if (full) {
-            tail = (tail + 1) % maxSize; // 如果满了, 移动尾指针
+        void insert(int value) {
+            buffer[head] = value;
+            
+            if (full) {
+                tail = (tail + 1) % maxSize; // 如果满了, 移动尾指针
+            }
+            
+            head = (head + 1) % maxSize; // 移动头指针
+            
+            full = head == tail; // 检查是否已满
         }
-        
-        head = (head + 1) % maxSize; // 移动头指针
-        
-        full = head == tail; // 检查是否已满
-    }
 
-    int remove() {
-        if (isEmpty()) {
-            throw std::runtime_error("Buffer is empty");
+        int remove() {
+            if (isEmpty()) {
+                throw std::runtime_error("Buffer is empty");
+            }
+            
+            int value = buffer[tail];
+            full = false; // 移除元素后不再满
+            tail = (tail + 1) % maxSize; // 移动尾指针
+            
+            return value;
         }
-        
-        int value = buffer[tail];
-        full = false; // 移除元素后不再满
-        tail = (tail + 1) % maxSize; // 移动尾指针
-        
-        return value;
-    }
 
-    bool isEmpty() const {
-        return (!full && (head == tail));
-    }
-
-    bool isFull() const {
-        return full;
-    }
-
-private:
-    std::vector<int> buffer; // 存储数据的数组
-    size_t maxSize;          // 缓冲区最大容量
-    size_t head;            // 指向下一个写入的位置
-    size_t tail;            // 指向下一个读取的位置
-    bool full;              // 缓冲区是否已满
-};
-
-// 示例用法: 
-int main() {
-    RingBuffer rb(5); // 创建大小为5的环形缓冲区
-    
-    for (int i = 0; i < 7; ++i) { 
-        rb.insert(i);
-        
-        if (!rb.isFull()) {
-            std::cout << "Inserted: " << i << std::endl;
-        } else {
-            std::cout << "Buffer Full! Overwriting " << rb.remove() << " with " << i << std::endl;
-            rb.insert(i); 
-            std::cout << "Inserted: " << i << std::endl;
+        bool isEmpty() const {
+            return (!full && (head == tail));
         }
+
+        bool isFull() const {
+            return full;
+        }
+
+    private:
+        std::vector<int> buffer; // 存储数据的数组
+        size_t maxSize;          // 缓冲区最大容量
+        size_t head;            // 指向下一个写入的位置
+        size_t tail;            // 指向下一个读取的位置
+        bool full;              // 缓冲区是否已满
+    };
+
+    // 示例用法: 
+    int main() {
+        RingBuffer rb(5); // 创建大小为5的环形缓冲区
         
-      while(!rb.isEmpty()){
-         std::cout<<"Removed: "<<rb.remove()<<std::endl;
-      }
-      std::cout<<"------------------------"<<std::endl;
+        for (int i = 0; i < 7; ++i) { 
+            rb.insert(i);
+            
+            if (!rb.isFull()) {
+                std::cout << "Inserted: " << i << std::endl;
+            } else {
+                std::cout << "Buffer Full! Overwriting " << rb.remove() << " with " << i << std::endl;
+                rb.insert(i); 
+                std::cout << "Inserted: " << i << std::endl;
+            }
+            
+        while(!rb.isEmpty()){
+            std::cout<<"Removed: "<<rb.remove()<<std::endl;
+        }
+        std::cout<<"------------------------"<<std::endl;
+    }
+    ```
 
-}
-用途
+    - 作用
+        - 数据流处理: 在实时数据流(如音频或视频)的处理中, 可以使用环形缓冲区来平滑数据输入和输出. 例如, 在数字音频工作站中, 可以用它来存储录制的音轨. 
+        - 生产者-消费者模型: 在多线程程序中, 生产者将数据放入缓冲区, 而消费者从中取出. 环形缓冲区提供了一种简单且高效的方法来处理这种并发访问. 
+        - 网络包缓存: 在网络编程中, 尤其是当接收速度不均匀时, 环形缓冲可以作为暂存区域, 用于缓存收到的数据包. 
+        - 任务调度: 一些调度系统可以利用环形缓冲机制管理等待队列, 实现任务间轮转.
 
-数据流处理: 在实时数据流(如音频或视频)的处理中, 可以使用环形缓冲区来平滑数据输入和输出. 例如, 在数字音频工作站中, 可以用它来存储录制的音轨. 
-生产者-消费者模型: 在多线程程序中, 生产者将数据放入缓冲区, 而消费者从中取出. 环形缓冲区提供了一种简单且高效的方法来处理这种并发访问. 
-网络包缓存: 在网络编程中, 尤其是当接收速度不均匀时, 环形缓冲可以作为暂存区域, 用于缓存收到的数据包. 
-任务调度: 一些调度系统可以利用环形缓冲机制管理等待队列, 实现任务间轮转. 
-15、DMA和FIFO的区别
-DMA(直接内存访问)和FIFO(先进先出)是两种用于数据传输的不同机制, 它们各自有不同的功能和应用场景. 以下是它们之间的主要区别: 
+- 15 **DMA和FIFO的区别**
+    - 直接内存访问 (Direct Memory Access) 和 先进先出 (First In First Out) 是两种用于数据传输的不同机制, 它们各自有不同的功能和应用场景.
 
-15.1 定义
-DMA(Direct Memory Access):DMA 是一种允许外部设备(如硬盘、网络适配器等)直接访问主内存而不通过 CPU 的技术. 这样可以在数据传输时释放 CPU, 让其处理其他任务, 提高系统效率. 
-
-FIFO(First In, First Out):FIFO 是一种数据结构, 用于缓存数据. 按照“先进先出”的原则, 最早进入缓冲区的数据会最先被读取. FIFO 通常用于实现队列或缓冲区. 
+        - 1 定义
+            - DMA(Direct Memory Access) 是一种允许外部设备(如硬盘 网络适配器等)直接访问主内存而不通过 CPU 的技术. 这样可以在数据传输时释放 CPU, 让其处理其他任务, 提高系统效率.
+            - FIFO(First In, First Out):FIFO 是一种数据结构, 用于缓存数据. 按照“先进先出”的原则, 最早进入缓冲区的数据会最先被读取. FIFO 通常用于实现队列或缓冲区. 
 
 15.2工作原理
 DMA:在 DMA 模式下, 外部设备发起一个请求给 DMA 控制器, DMA 控制器获得总线控制权后, 将数据从外设转移到内存中. 在这个过程中, CPU 不需要参与数据传输, 从而降低了 CPU 的负载. 

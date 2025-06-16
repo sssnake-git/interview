@@ -8,10 +8,10 @@
     - 1 Transformer的整体架构
         - Transformer由编码器(Encoder)和解码器(Decoder)两部分组成, 适用于序列到序列(seq2seq)任务, 如机器翻译.   
         其中:
-            - **编码器(Encoder)** 负责提取输入序列的语义信息, 输出高维表示.
-            - **解码器(Decoder)** 负责根据编码器的输出生成目标序列.
+            - 编码器(Encoder) 负责提取输入序列的语义信息, 输出高维表示.
+            - 解码器(Decoder) 负责根据编码器的输出生成目标序列.
 
-        在"Attention Is All You Need"中:
+        在 "Attention Is All You Need" 中:
             - 编码器和解码器均由多个相同的层堆叠而成, 每层包括多头自注意力(Multi-Head Self-Attention)和前馈神经网络(Feed Forward Network, FFN).
             - 解码器比编码器多一个掩码(Masked Multi-Head Attention)来防止看到未来的词.
 
