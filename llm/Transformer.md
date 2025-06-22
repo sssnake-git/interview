@@ -3,25 +3,25 @@
 ## Concepts
 
 - 1 **Transformer的结构**
-    - Transformer架构是一种基于自注意力机制(Self-Attention)的神经网络模型, 广泛应用于自然语言处理(NLP)和计算机视觉(CV)等领域. 其核心思想是利用注意力机制来建模输入序列中的全局依赖关系, 而不依赖于传统的循环神经网络(RNN)或卷积神经网络(CNN).
+    - Transformer 架构是一种基于自注意力机制 (Self-Attention) 的神经网络模型, 广泛应用于自然语言处理 (NLP) 和计算机视觉 (CV) 等领域. 其核心思想是利用注意力机制来建模输入序列中的全局依赖关系, 而不依赖于传统的循环神经网络 (RNN) 或卷积神经网络 (CNN).
 
-    - 1 Transformer的整体架构
-        - Transformer由编码器(Encoder)和解码器(Decoder)两部分组成, 适用于序列到序列(seq2seq)任务, 如机器翻译.   
+    - 1 Transformer 的整体架构
+        - Transformer 由编码器 (Encoder) 和解码器 (Decoder) 两部分组成, 适用于序列到序列 (seq2seq) 任务, 如机器翻译.   
         其中:
-            - 编码器(Encoder) 负责提取输入序列的语义信息, 输出高维表示.
-            - 解码器(Decoder) 负责根据编码器的输出生成目标序列.
+            - 编码器 (Encoder) 负责提取输入序列的语义信息, 输出高维表示.
+            - 解码器 (Decoder) 负责根据编码器的输出生成目标序列.
 
         在 "Attention Is All You Need" 中:
-            - 编码器和解码器均由多个相同的层堆叠而成, 每层包括多头自注意力(Multi-Head Self-Attention)和前馈神经网络(Feed Forward Network, FFN).
+            - 编码器和解码器均由多个相同的层堆叠而成, 每层包括多头自注意力 (Multi-Head Self-Attention) 和前馈神经网络 (Feed Forward Network, FFN).
             - 解码器比编码器多一个掩码(Masked Multi-Head Attention)来防止看到未来的词.
 
     - 2 关键组成部分
         - 1 输入表示
-            - Transformer的输入首先经过**词嵌入(Embedding)**, 然后加入**位置编码(Positional Encoding)**, 因为Transformer不具备RNN的序列信息, 因此需要显式加入位置信息.
+            - Transformer 的输入首先经过词嵌入 (Embedding), 然后加入位置编码 (Positional Encoding), 因为 Transformer 不具备RNN的序列信息, 因此需要显式加入位置信息.
 
-        - 2 自注意力机制(Self-Attention)
-            - 自注意力的核心思想是计算输入序列中每个单词(Token)对其他单词的重要性.   
-            - 在**自注意力计算**中, 每个输入token都会计算三个向量: 
+        - 2 自注意力机制 (Self-Attention)
+            - 自注意力的核心思想是计算输入序列中每个单词 (Token) 对其他单词的重要性.   
+            - 在**自注意力计算**中, 每个输入 token 都会计算三个向量: 
                 - **查询向量(Query, Q)**
                 - **键向量(Key, K)**
                 - **值向量(Value, V)**
@@ -33,7 +33,7 @@
                 - Softmax 归一化后得到注意力权重. 
                 - 乘以 \( V \) 得到加权的输出. 
 
-        - 3 多头注意力(Multi-Head Attention)
+        - 3 多头注意力 (Multi-Head Attention)
             - 在单头注意力中, 每个词只学习一种注意力模式, 而**多头注意力**(MHA)允许模型关注多个不同的语义关系. 其实现方式: 
                 - 先对 \( Q, K, V \) 进行多个线性变换, 分成多个注意力头. 
                 - 每个头独立执行自注意力计算. 
@@ -42,47 +42,47 @@
             - 公式如下: 
                 \[ \text{MultiHead}(Q, K, V) = \text{Concat}(\text{head}_1, ..., \text{head}_h) W^O \]
 
-        - 4 前馈神经网络(Feed Forward Network, FFN)
+        - 4 前馈神经网络 (Feed Forward Network, FFN)
             - 每个编码器和解码器层中都包含一个**前馈神经网络**, 其作用是对每个词的向量表示进行非线性变换: 
                 \[ \text{FFN}(x) = \max(0, x W_1 + b_1) W_2 + b_2 \]
-            - 这里的 \( \max(0, \cdot) \) 是ReLU激活函数. 
+            - 这里的 \( \max(0, \cdot) \) 是ReLU激活函数.
 
-        - 5 层归一化(Layer Normalization)
-            - 为了稳定训练, Transformer在**多头注意力和FFN之后**都会进行**层归一化(LayerNorm)**, 提高训练稳定性. 
+        - 5 层归一化 (Layer Normalization)
+            - 为了稳定训练, Transformer 在多头注意力和 FFN 之后都会进行层归一化 (LayerNorm), 提高训练稳定性. 
 
-        - 6 残差连接(Residual Connection)
-            - Transformer在每个子层(自注意力, 多头注意力, FFN)外都加了残差连接: 
+        - 6 残差连接 (Residual Connection)
+            - Transformer 在每个子层(自注意力, 多头注意力, FFN)外都加了残差连接: 
                 \[ \text{Output} = \text{LayerNorm}(x + \text{Sublayer}(x)) \]
             - 残差连接有助于信息流动和梯度传播. 
 
-        - 7 掩码(Masking)
-            - Padding Mask: 防止模型关注填充(Padding)的位置. 
-            - Look-Ahead Mask(未来信息屏蔽): 用于解码器, 避免预测时看到未来信息. 
+        - 7 掩码 (Masking)
+            - Padding Mask: 防止模型关注填充 (Padding) 的位置. 
+            - Look-Ahead Mask (未来信息屏蔽): 用于解码器, 避免预测时看到未来信息. 
 
-    - 3 Transformer的训练
-        - Transformer的训练通常使用自回归(Auto-regressive)解码, 即在解码时, 模型只能看到当前和过去的输出.
+    - 3 Transformer 的训练
+        - Transformer的训练通常使用自回归 (Auto-regressive) 解码, 即在解码时, 模型只能看到当前和过去的输出.
 
-        - 训练时, 使用交叉熵损失(Cross-Entropy Loss), 并结合Teacher Forcing技巧, 使得训练更稳定.
+        - 训练时, 使用交叉熵损失 (Cross-Entropy Loss), 并结合 Teacher Forcing 技巧, 使得训练更稳定.
 
         - 此外, 常用的优化方法: 
             - Adam 优化器
-            - 学习率调度(Learning Rate Warmup + Decay)
+            - 学习率调度 (Learning Rate Warmup + Decay)
 
-    - 4 Transformer的优势
-        相比RNN和CNN, Transformer具有以下优势(后面有详细介绍为什么Transformer替代了LSTM)
-            - 并行计算: 不像RNN需要序列化处理, Transformer可以利用矩阵计算并行处理所有词. 
-            - 长距离依赖: 自注意力可以建模长距离依赖, 而RNN存在梯度消失问题. 
+    - 4 Transformer 的优势
+        - 相比RNN和CNN, Transformer 具有以下优势(后面有详细介绍为什么 Transformer 替代了 LSTM)
+            - 并行计算: 不像RNN需要序列化处理, Transformer 可以利用矩阵计算并行处理所有词. 
+            - 长距离依赖: 自注意力可以建模长距离依赖, 而 RNN 存在梯度消失问题. 
             - 更强的特征表达能力: 多头注意力能学习不同层次的语义关系. 
 
-    - 5 Transformer的变体
-        - Transformer架构被广泛应用, 并产生多个变体: 
+    - 5 Transformer 的变体
+        - Transformer 架构被广泛应用, 并产生多个变体: 
             - BERT(双向编码): 适用于NLP任务(如问答, 情感分析).
             - GPT(自回归解码): 用于生成文本(如ChatGPT).
             - Vision Transformer (ViT): 用于计算机视觉任务(如图像分类). 
             - T5, BART: 用于文本生成和翻译任务. 
 
     - Summary
-        - Transformer是一种基于*自注意力*的架构, 核心组成部分包括*多头注意力, 前馈神经网络, 残差连接, 层归一化和位置编码*, 具备*并行计算, 高效建模长距离依赖*的能力, 已经成为现代深度学习的主流架构.
+        - Transformer 是一种基于自注意力的架构, 核心组成部分包括多头注意力, 前馈神经网络, 残差连接, 层归一化和位置编码, 具备并行计算, 高效建模长距离依赖的能力, 已经成为现代深度学习的主流架构.
 
 - 2 **Self attention**
 

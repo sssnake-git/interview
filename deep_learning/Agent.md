@@ -34,14 +34,16 @@
 - Q3 **Agent由什么组成?**
     - 引用: https://lilianweng.github.io/posts/2023-06-23-agent/
     - 一个基于LLM的自主Agent系统的几个关键组成部分
-        - `Planning`(规划)
+        - Planning (规划)
           子目标和分解: 代理可以将大型任务分解为更小, 更易管理的子目标, 从而有效地处理复杂任务.
-          反思和改进：代理可以对过去的行为进行自我批评和自我反思, 从错误中学习并改进未来的步骤, 从而提高最终结果的质量. 
-        - `Memory`(记忆)
-          `Short-term memory`: 在prompt中或者对话上下文中的信息.
-          `Long-term memory`: 这为代理提供了在长时间内保留和回忆 (无限) 信息的能力, 通常是通过利用外部向量存储和快速检索.  (比如`chatPDF`、联网搜索等) 
-        - `Tool use`(工具使用)
-          通过输出指令, 来调用额外的`API`, 弥补 `LLM`确实的信息和能力. 当前信息、代码执行能力、对专有信息源的访问等. 
+          反思和改进: 代理可以对过去的行为进行自我批评和自我反思, 从错误中学习并改进未来的步骤, 从而提高最终结果的质量.
+
+        - Memory (记忆)
+            - Short-term Memory: 在prompt中或者对话上下文中的信息.
+            - Long-term Memory: 这为代理提供了在长时间内保留和回忆 (无限) 信息的能力, 通常是通过利用外部向量存储和快速检索. (比如 chatPDF 联网搜索等)
+
+        - Tool use (工具使用)
+            - 通过输出指令, 来调用额外的 API, 弥补 LLM 确实的信息和能力. 当前信息 代码执行能力 对专有信息源的访问等. 
 
             ![Untitled](Agent/Agent1.png)
             Overview of a LLM-powered autonomous agent system.
