@@ -1,6 +1,28 @@
 # Inference
 
-## Inference Framework Intro
+## Inference Process
+# 1 整体过程
+
+## 一个完整的生成任务为例:
+- prompt: 你好世界!
+- output: Hello world!
+- 模型结构, llama类的标准 transformer 模型, decoder-only.
+
+## 1.2 模型推理的阶段
+### Context / Prefill Stage
+输入长度为 N 的 prompt (for example 512 tokens)
+一次性处理所有的 token
+生成初始的 key / value cache, 即 KV cache
+输出第一个 logits, 用于预测下一个 token
+
+
+
+### Decode Stage
+
+每次只处理一个新的 token, 基于前一个 token 的 hidden state 处理
+使用 KV cache 加速 attention 的计算
+重复上述计算, 直到达到 max_new_tokens 或遇到 EOS 标志
+
 
 ## vLLM
 
@@ -119,8 +141,4 @@
 
 - 3 Greedy Search
     - 假设词表中有"a", "given", "human", "it", "must", "obey", "Okay", "orders", "robot", "the", ".", "EOS" 共12个token, 其中"EOS"表示终止token. Greedy Search
-
-
-
-
 
