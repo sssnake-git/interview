@@ -29,8 +29,8 @@
 - 1 **vLLM definition**
     - vLLM是一个大模型推理服务框架, 目前做到: 最牛的 serving 吞吐量, Paged Attention 对 kv cache的有效管理, 传入请求的 continus batching 而不是 static batching, 高性能 CUDA kernel, 流行的 HuggingFace 模型无缝集成, 有各种 decoder 算法的高吞吐量服务, 包括 parallel sampling 和 beam search 等, tensor parallel, 兼容 OpenAI 的 API 服务器.
 
-- 2 **LLM Decoder 推理基础**
-    - LLM 解码器的推理主要分为两步, 黄色为 prompt, 蓝色为每个 token generation
+- 2 **LLM Decoder 大模型解码器的推理步骤**
+    - LLM 解码器的推理主要分为两步, 黄色为 prompt, 蓝色为每个 token generation.
         - prompt.
         - LLM 生成一个完整 token 序列, 当遇到 stop token 或最大句子长度就停止.
         ![Untitled](Inference/vllm1.png)
@@ -48,6 +48,8 @@
         ![Untitled](Inference/vllm3.png)
 
 - 4 **Paged Attention**
+    - Paged Attention 是对 kv cache 所占空间的分页管理, 是一个典型的以内存空间换计算开销的手段, vllm 和 tenorRT-llm 都应用了这个手段来节约 kv cache 占用的 memory, 和现今大模型训练的 recompute 中间 activation 用于带宽的以计算开销换内存空间的手段恰好相反.
+
     - KV cache
         - 在大模型推理过程中, 所有输入到大模型中的 token 会产生注意力 key 和 value 的 tensor, 这些 tensor 保存在 GPU 的显存里, 用来生成下一个 token, 这些缓存下来的 key 和 value 的 tensor 被称为 KV cache.
             - KV cache 内存占用大, 以 Llama-13B 为例, 缓存单个序列最多需要 1.7GB 内存.
@@ -57,18 +59,18 @@
         - 大模型的核心是自回归 Transformer, 基于输入 prompt 和其之前输出的 token 序列生成词句 (token), 每次生成一个 token. 这种按照序列的生成过程会让工作负载收到内存/显存的限制, 最终限制服务的吞吐量.
         - 通过 batch 可以同时处理多个请求, 提高模型服务的吞吐量. 但是要在单一批次中处理多个请求, 就需要高效管理每个请求所占用的内存/显存空间. 下图展示了一个 (13B)130亿 参数的大模型在一台 40GB 显存的 Nvidia A100 GPU 上的内存分布.
         ![Untitled](Inference/vllm4.png)
-        - 其中65%的显存分配给了模型权重, 而模型权重在提供服务期间是不会变化的. 30% 的内存用于存储请求的动态状态, 对 transformer 而言, 这些状态由与注意力机制关联的 key 和 value 的张量组成, 即 KV cache, 表示用于生成序列中新输出的 token 之前 token 上下文.
+        - 其中 65% 的显存分配给了模型权重, 而模型权重在提供服务期间是不会变化的. 30% 的内存用于存储请求的动态状态, 对 transformer 而言, 这些状态由与注意力机制关联的 key 和 value 的张量组成, 即 KV cache, 表示用于生成序列中新输出的 token 之前 token 上下文.
         - 其余占比较小主要包括激活, 临时张量等数据.
 
         - 由于模型权重是不变的, 激活等其他数据占比也很小, 因此对于 KV cache 的管理方式就成为推理时 batch size 的关键.
         - 在论文 "Efficient Memory Management for Large Language Model Serving with PagedAttention" 中, 在当前的大模型中, 一般会将球轻到的 KV cache保存在邻接的内存空间中, 因为大多数深度学习框架都需要将张量存储在相邻连续的内存中. 不同于传统深度学习工作负载中的张量, 大模型中的 KV cache 有自己独特的性质, KV cache 会在模型生成新的 token 的过程中随着时间动态地增大或减小, 而且它持续的时间和长度事先无法预估.
         - https://arxiv.org/pdf/2309.06180
         ![Untitled](Inference/vllm5.png)
-    
+
     - vllm 架构
         - vLLM 采用集中式调度器 (scheduler) 来协调分布式 GPU 工作器 (worker) 的执行. KV cache 管理由 Paged Attention 驱动, 能够以分页的方式有效管理 KV cache.
         ![Untitled](Inference/vllm6.png)
-    
+
     - Paged Attention 解决内存瓶颈
         - Paged Attention 为了解决 KV cache, 借鉴了操作系统中虚拟内存和分页经典思想. 与传统的注意力算法不同, Paged Attention 允许在非连续的内存空间中储存连续的 key 和 value, Paged Attention 将每个序列的 KV cache 缓存划分为块, 每个块包含固定数量的 token 的 key 和 value, 在计算注意力期间, Paged Attention内核会识别并获取到这些块. Paged Attention支持将连续的key和value存储在非相邻连续的内存空间中.
         - Paged Attention会将每个序列的KV cache分成KV块, 每个块都包含了固定数量token的key和value的向量; 这个固定数量记为KV块大小(B), 第j个KV块的key是$K
@@ -124,13 +126,14 @@
 
 ## Inference
 
-- 1 **大模型推理时的参数设置**
+- **大模型推理时的参数设置**
     - Temperature: 用于调整随机从生成模型中抽样的程度, 使得相同的提示可能会产生不同的输出. 温度为0将始终产生相同的输出, 该参数设置越高随机性越大.
     - 波束搜索宽度(Beam Search Width): 波束搜索是许多NLP和语音识别模型中常用的一种算法, 作为在给定可能选项的情况下选择最佳输出的最终决策步骤. 波束搜索宽度是一个参数, 用于确定算法在搜索的每个步骤中应该考虑的候选数量.
     - Top p: 动态设置tokens候选列表的大小. 将可能性之和不超过特定值的top tokens列入候选名单. Top p通常设置为较高的值(如 0.75), 目的是限制可能被采样的低概率token的长度.
     - Top k: 允许其他高分tokens有机会被选中. 这种采样引入的随机性有助于在很多情况下生成的质量. Top k参数设置为3则意味着选择前三个tokens. 若Top k和Top p都启用, 则Top p在Top k之后起作用.
 
-- 2 **大模型推理的过程**
+
+- **大模型推理的过程** to be continue
     - 目前常见的大模型只包括了Transformer Decoder, 每个token在输入模型到Transformer Decoder之前, 都会先从Word Embedding层中通过查表获取对应的Embedding向量, 然后将Embedding向量输入到Transformer Decoder中, 并且在最后一层输出的也是相同维度的Embedding. 在预测下一个Token时, 实际上只利用了上一个Token的Embedding.
     - 如图所示, 输入是"a robot must obey the orders given it", 将其转换成对应的Embedding后, 输入到Transformer Decoder中, 每一个token对应的位置相应的也会生成一个新的embedding, 使用最后一个token "it"对应新生成的embeddeding(蓝色)来生成的新的token "Okay", 之后再把刚刚生成的这个token "Okay" 也作为输入, 根据 "Okay" 产生的embedding继续生成的新的token "human", 以此类推.
     ![Untitled](Inference/infer1.gif)
@@ -139,6 +142,112 @@
     - 其中, token embeddings的行数即位模型词表中token的个数, 列数即位embedding的维度, 也就是每个token对应一个ebedding维度的向量.
     ![Untitled](Inference/infer3.png)
 
-- 3 Greedy Search
+- **Greedy Search**
     - 假设词表中有"a", "given", "human", "it", "must", "obey", "Okay", "orders", "robot", "the", ".", "EOS" 共12个token, 其中"EOS"表示终止token. Greedy Search
+
+- **all2all**
+    - 在以vllm为代表的大模型推理框架中, all2all是一个关键的通信操作, 尤其在MoE模型的Expert parallel场景中起到了核心作用.
+    - all2all的概念
+        - all2all是一种多GPU或多节点之间的数据交换模式, 其中每个GPU向其他的GPU发送数据, 并从所有其他的GPU接收数据, 与AllReduce AllGather BroadCast并列, 是分布式训练和推理中常见的集体通信操作.
+    - all2all的意义
+        - 在MoE模型里, 每个token被路由(routing)到特定的专家(expert)上进行计算, 不同的token会被分配到不同的专家, 为了实现高效的并行, 不同的专家会被分配到不同的GPU上, 即为expert parallel.
+        - 在expert parallel的背景下, 当前GPU上的token可能需要到其他的GPU上进行计算, 计算完成后将结果传回, 这样的过程是由all2all实现的.
+    - all2all的过程
+        - 假设有8个GPU, 8个专家, 每个GPU负责一个专家.
+        - Inputs
+            token, 分布在各个GPU上.
+        - Routing
+            通过gating, 决定每个token分配到哪个专家.
+        - all2all发送
+            每个GPU把自己负责的token按照目标专家(目标GPU)进行分组, 然后发送给对应的GPU.
+        - 本地计算
+            每个GPU只计算分配给它的token
+        - all2all接收
+            计算完成后, 结果通过all2all传回原来的GPU
+    - 通信开销
+        通信量计算 $All communication \approx seq\_len \times hidden\_size \times (num\_experts / num\_device) \times comm\_round $
+    
+- **MoE权重的结构**
+    - 在MoE模型中, gate_proj, up_proj和down_proj共同够成了专家网络(Expert Network)和路由机制(Gating Mechanism).
+    - MoE的基本结构
+        - 一个典型的MoE层包含
+            ```python
+            输入 x
+            │
+            ▼
+            [Gate] -> 路由 (决定x的哪些部分去哪个expert)
+            │
+            ▼
+            Experts: [Expert_0, Expert_1, ..., Expert_N]
+            │ (每个expert是一个FFN子网络)
+            ▼
+            加权组合输出
+            │
+            ▼
+            输出 y
+            ```
+        - 每个expert通常是一个FFN, 其结构类似:
+            ```python
+            x -> [Up Projection] -> [Activation] -> [Down Projection] -> output
+            ```
+        - Gate负责输入应该走哪个或者哪些专家.
+    
+    - Gate 门控函数/路由
+        - 决定了每个token应该被路由到哪一个或哪几个专家.
+        - 输入: $x \in R^d$, gate网络通常是一个线性层:
+            - $ g(x) = \text{softmax}(W_g x) \quad \text{or} \quad {top_k} {\text{softmax}(W_g x)} $
+        - 输出: 一个概率分布(权重), 表示每个专家被选中的概率大小.
+        - Gate不改变数据流, 只做决策. 参数量通常很小, 只是一个$d \rightarrow N$的线性层, $N$是专家数.
+
+    - Up projection 上投影
+        - 将输入从隐藏维度d映射到更高维的中间表示空间(这个中间表示空间是expert内部FFN的扩展层).
+        - 输入: hidden layer size, $d_{model}$
+            - $ h = up\_{proj}(x) = W_{up} $
+            - 其中 $W_{up} \in R^{d_{ff} \times d}$, $d_{ff}$是FFN的中间维度. 
+        - 输出: intermediate size, "intermediate_size"
+        - Example, Mixtral-8x7B
+            - In config.json:
+                ```java
+                hidden_size: 4096
+                intermediate_size: 14336
+                ```
+            - Input: [seq_len, 4096]
+            - Output: [seq_len, 14336]
+        - 标准transformer中FFN的第一个线性层(有时也叫fc1).
+        - 维度通常被“向上”扩展, 增加模型容量, 因此被称为"up".
+
+    - Down projection 下投影
+        - 将中间表示空间的高维表示$h$投影回原始隐藏维度$d$, 以便与残差连接兼容.
+        - 输入: 
+            - $ y = {down_{proj}}(h) = W_{down} h $
+            - 其中, $ W_{down} \in R^{d \times d_{ff}} $
+        - 输出:
+        - 这是标准FFN的第二个线性层(有时也叫fc2).
+        维度通常从高维"向下"压缩回到原始维度, 因此被称为"down".
+    
+    - 中间激活函数
+        - 通常在up_proj之后会有一个非线性的激活函数, 比如:
+            - $ SwiGLU = SwiGLU(a, b) = Swish(a) \times b $, 其中
+                - $a = W_{gate} x
+                - b = W_{up} x$
+                - 所以实际上有两个"up_proj"分支.
+        - 在SWiGLU架构中
+            - gate_proj: generate gate branch
+            - up_proj: generate "up" branch
+            - down_proj: final output
+        - Example, Mixtral structure uses MLP with SwiGLU:
+            ```python
+            class MoEFeedForward(nn.Module):
+                def forward(x):
+                    g = gate_proj(x) # [d] -> [d_ff]
+                    u = up_proj(x) # [d] -> [d_ff]
+                    h = swish(g) * u # element wise
+                    out = down_proj(h) # [d_ff] -> [d]
+                    return out
+            ```
+        
+- 5 **Rotary Embedding**
+    
+
+
 

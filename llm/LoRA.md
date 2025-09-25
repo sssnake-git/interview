@@ -342,7 +342,7 @@
 
     - DoRA
 
-    - rs LoRA`
+    - rs LoRA
 
     - PiSSA
 
