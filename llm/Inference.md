@@ -1,35 +1,8 @@
 # Inference
 
 ## Inference Process
-# 1 整体过程
 
-## 一个完整的生成任务为例:
-- prompt: 你好世界!
-- output: Hello world!
-- 模型结构, llama类的标准 transformer 模型, decoder-only.
-
-## 1.2 模型推理的阶段
-### Context / Prefill Stage
-输入长度为 N 的 prompt (for example 512 tokens)
-一次性处理所有的 token
-生成初始的 key / value cache, 即 KV cache
-输出第一个 logits, 用于预测下一个 token
-
-
-
-### Decode Stage
-
-每次只处理一个新的 token, 基于前一个 token 的 hidden state 处理
-使用 KV cache 加速 attention 的计算
-重复上述计算, 直到达到 max_new_tokens 或遇到 EOS 标志
-
-
-## vLLM
-
-- 1 **vLLM definition**
-    - vLLM是一个大模型推理服务框架, 目前做到: 最牛的 serving 吞吐量, Paged Attention 对 kv cache的有效管理, 传入请求的 continus batching 而不是 static batching, 高性能 CUDA kernel, 流行的 HuggingFace 模型无缝集成, 有各种 decoder 算法的高吞吐量服务, 包括 parallel sampling 和 beam search 等, tensor parallel, 兼容 OpenAI 的 API 服务器.
-
-- 2 **LLM Decoder 大模型解码器的推理步骤**
+- **LLM Decoder 大模型解码器的推理步骤**
     - LLM 解码器的推理主要分为两步, 黄色为 prompt, 蓝色为每个 token generation.
         - prompt.
         - LLM 生成一个完整 token 序列, 当遇到 stop token 或最大句子长度就停止.
@@ -37,7 +10,54 @@
     - LLM decoder 的推理是收到内存/显存限制的 (Memory Bound), 这意味着推理的吞吐能力很大程度取决于用户给到 HBM (高宽带内存, High Bandwidth Memory) 显存多大的 batch size, 而不是 GPU 算力越高, 吞吐越大. HBM 的消耗随着 model size 和句子 seqlen 而变化. 例如, 在 13B 参数的模型中, 对于 sequence 中每个 token 的 state 都要花费 1M 的空间, 对于 A100 显存为 40G 的显卡, 13B 模型的参数占了 26G, 还剩 14G 的空间可以保存 14k token 的 state, 如果我们设置 seqlen 为 512, 那么 batch size 最大是28, 如果 seqlen 为 2048, 那么 batch size 最大为 7. 这是一个理论的上限值, 因为还没算中间 tensor 的内存/显存占用.
     - 由此可见, 量化在大模型的推理中作用很大, 可以加大单卡上的 batch size 和 seqlen, 但是需要修改模型的权重 (flash attention 不用修改模型权重, 使用 continuous batching 也可以提高 memory IO 的效率).
 
-- 3 **LLM Batching**
+- **LLM Decoder 大模型解码器的推理过程**
+    - Load weights 加载权重
+        - 内存: 模型权重. KV cache为空.
+
+    - Tokenization 分词
+        - 作用: 将用户输入的原始文本(prompt)转换为模型可理解的token ID序列.
+        - 执行: 在推理开始之前执行.
+        - 位置: 通常在CPU上执行(除非使用某些triton GPU加速的tokenizer).
+        - 输出: 一个整数列表(token IDs), 长度为$L$.
+        - 内存: 内存几乎无变化, 只储存token IDs, 占内存很小.
+
+    - Prefill 预填充
+        - 作用: 将整个prompt的token序列一次性输入模型, 计算所有 token 的 KV Cache, 为后续自回归生成做准备.
+        - 执行方式: 并行处理整个prompt(token), (因为所有 token 已知), 一次性前向传播(forward pass).
+        - 输出: 最后一个token的logits(用于采样第一个生成 token), 以及完整的 KV Cache.
+        - 内存: 计算量最大的阶段之一, 内存增长也最剧烈.
+            - KV Cache 被填充:每个 transformer 层为 prompt 的每个 token 存储 key 和 value 向量.
+                - 内存占用 $ \approx 2 \times L \times d_{model} \times n_{layers} \times bytes\_per\_param$
+                - 例如:L=1000, d=4096, layers=32, float16, 占用内存约500MB.
+            - 激活值 (activations):在前向过程中临时存在，但通常不保留(除非需要梯度).
+            - 峰值内存: Prefill 阶段通常达到推理过程中的内存峰值，因为要同时处理长序列且构建完整 KV Cache.
+        - chunked prefill
+            - 背景: 当prompt非常长(例如大于32k tokens)时, 一次性prefill可能会导致超出GPU显存(KV cache太大), 或者显存碎片等.
+            - 解决方案: 将prompt分成多个chunks(块), 逐块处理. 每个块做一次partial prefill, 累积KV cache, 当最后一块处理完之后, 再进行decode.
+
+    - Decoding 自回归生成
+        - 作用: 逐个生成新 token, 每次只处理一个 token(自回归).
+        -  执行: 每次使用上一步生成的 token 作为输入, 利用已缓存的 KV Cache(避免重复计算历史 token 的 attention).执行一次 decode forward(也叫 generation forward). 循环执行，直到遇到 EOS(end-of-sequence)或达到最大长度.
+        - 输出: 循环输出token.
+        - 内存: 这里讨论每步的内存. decode阶段内存增长缓慢, 但总内存持续上升.
+            - 每次只增加一个token的KV cache.
+            - 内存线性增长: 每生成一个token, KV cache增长约为 $2 \times d_{model} \times n_{layers}$.
+            - 激活值: 很小, 每次只处理一个token.
+
+    - Sampling 采样
+        - 作用: 根据 decode forward 输出的 logits，选择下一个 token.
+        - 策略: 可以是 greedy(取最大 logit)、top-k、top-p(nucleus)、temperature scaling 等.
+        - 执行: 每次 decode forward 之后.
+        - 输出: 一个 token ID，作为下一轮 decode 的输入.
+
+    ![Untitled](Inference/infer_sequence1.png)
+
+## vLLM
+
+- **vLLM definition**
+    - vLLM是一个大模型推理服务框架, 目前做到: 最牛的serving吞吐量, Paged Attention 对 kv cache的有效管理, 传入请求的 continus batching 而不是 static batching, 高性能 CUDA kernel, 流行的 HuggingFace 模型无缝集成, 有各种 decoder 算法的高吞吐量服务, 包括 parallel sampling 和 beam search 等, tensor parallel, 兼容 OpenAI 的 API 服务器.
+
+- **LLM Batching**
     - LLM Batching
         - LLM Batching 的推理具有"迭代"的性质, 因为某些客户端的请求可以在 batching 中很早就完成, 但释放资源之后, 并且向可能处于不同完成状态的 batch 中添加新的客户端请求非常麻烦. 因此 GPU 资源没有充分利用, 因为一个 batch 中不同的 seqlen 的生成长度不同于 batch 的最大生成长度, 比如下图中, seq1 生成了 2 个 token, seq3 生成了 1 个, seq4 生成了 2 个, 然而 seq2 生成了 5个, seq1 seq3 seq4结束标记后的白色方块就是 GPU 空闲, 此时 GPU 利用率很低, 传统的 static batching 无法利用 GPU 的空闲时间.
         ![Untitled](Inference/vllm2.png)
@@ -47,7 +67,7 @@
         - 每当一个 batch 中的一个 seq 生成结束, 产生一个 end-of-seq token, 就可以在其位置插入新的 seq 继续生成 token, 从而达到比 static batching 更高的 GPU 利用率.
         ![Untitled](Inference/vllm3.png)
 
-- 4 **Paged Attention**
+- **Paged Attention**
     - Paged Attention 是对 kv cache 所占空间的分页管理, 是一个典型的以内存空间换计算开销的手段, vllm 和 tenorRT-llm 都应用了这个手段来节约 kv cache 占用的 memory, 和现今大模型训练的 recompute 中间 activation 用于带宽的以计算开销换内存空间的手段恰好相反.
 
     - KV cache
@@ -97,7 +117,6 @@
         - 在一个 KV块中存储多个token(块大小 > 1)可让Paged Attention核并行处理多个位置的KV cache, 由此可以提升硬件使用率并降低延迟.
         ![Untitled](image/vllm9.png)
 
-
     - vLLM code
         ```python
         from vllm import LLM, SamplingParams
@@ -124,6 +143,7 @@
             print(f"Prompt: {prompt!r}, Generated text: {generated_text!r}")
         ```
 
+
 ## Inference
 
 - **大模型推理时的参数设置**
@@ -131,7 +151,6 @@
     - 波束搜索宽度(Beam Search Width): 波束搜索是许多NLP和语音识别模型中常用的一种算法, 作为在给定可能选项的情况下选择最佳输出的最终决策步骤. 波束搜索宽度是一个参数, 用于确定算法在搜索的每个步骤中应该考虑的候选数量.
     - Top p: 动态设置tokens候选列表的大小. 将可能性之和不超过特定值的top tokens列入候选名单. Top p通常设置为较高的值(如 0.75), 目的是限制可能被采样的低概率token的长度.
     - Top k: 允许其他高分tokens有机会被选中. 这种采样引入的随机性有助于在很多情况下生成的质量. Top k参数设置为3则意味着选择前三个tokens. 若Top k和Top p都启用, 则Top p在Top k之后起作用.
-
 
 - **大模型推理的过程** to be continue
     - 目前常见的大模型只包括了Transformer Decoder, 每个token在输入模型到Transformer Decoder之前, 都会先从Word Embedding层中通过查表获取对应的Embedding向量, 然后将Embedding向量输入到Transformer Decoder中, 并且在最后一层输出的也是相同维度的Embedding. 在预测下一个Token时, 实际上只利用了上一个Token的Embedding.
@@ -245,8 +264,6 @@
                     out = down_proj(h) # [d_ff] -> [d]
                     return out
             ```
-        
-- 5 **Rotary Embedding**
     
 
 
