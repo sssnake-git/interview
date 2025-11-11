@@ -1,2 +1,8 @@
 # mac os files
 .DS_Store
+
+# IDE files
+.vscode/
+
+# Python cache files
+__pycache__/

@@ -152,6 +152,7 @@
     - Top p: 动态设置tokens候选列表的大小. 将可能性之和不超过特定值的top tokens列入候选名单. Top p通常设置为较高的值(如 0.75), 目的是限制可能被采样的低概率token的长度.
     - Top k: 允许其他高分tokens有机会被选中. 这种采样引入的随机性有助于在很多情况下生成的质量. Top k参数设置为3则意味着选择前三个tokens. 若Top k和Top p都启用, 则Top p在Top k之后起作用.
 
+
 - **大模型推理的过程** to be continue
     - 目前常见的大模型只包括了Transformer Decoder, 每个token在输入模型到Transformer Decoder之前, 都会先从Word Embedding层中通过查表获取对应的Embedding向量, 然后将Embedding向量输入到Transformer Decoder中, 并且在最后一层输出的也是相同维度的Embedding. 在预测下一个Token时, 实际上只利用了上一个Token的Embedding.
     - 如图所示, 输入是"a robot must obey the orders given it", 将其转换成对应的Embedding后, 输入到Transformer Decoder中, 每一个token对应的位置相应的也会生成一个新的embedding, 使用最后一个token "it"对应新生成的embeddeding(蓝色)来生成的新的token "Okay", 之后再把刚刚生成的这个token "Okay" 也作为输入, 根据 "Okay" 产生的embedding继续生成的新的token "human", 以此类推.
@@ -161,13 +162,31 @@
     - 其中, token embeddings的行数即位模型词表中token的个数, 列数即位embedding的维度, 也就是每个token对应一个ebedding维度的向量.
     ![Untitled](Inference/infer3.png)
 
+
+- **eager**
+    - graph模式
+        - 首先介绍一下vLLM默认使用的CUDA Graph(即graph模式)
+        - CUDA Graph 是 NVIDIA 提供的一种机制, 可以将一系列CUDA操作"录制"成一个静态图, 然后反复高效重放. 在LLM推理中, decode的步骤, 即每次生成一个token的计算模式高度重复, 特别是在相同的batch size, 相同的sequence length增量情况下, 非常适合用CUDA Graph加速.
+        - vLLM 会为不同batch size和sequence length组合预录制多个 CUDA Graph, 在推理时动态匹配并重放, 可以减少CPU调度开销, 避免kernel launch延迟, 提高GPU利用率, 最终降低per-token延迟.
+        - 优点: 高吞吐, 低延迟(尤其在稳定batch下)
+        - 缺点: 需要"静态"执行模式, batch size, sequence length等必须提前知道或匹配已有graph. 内存占用会偏高.
+
+    - eager模式
+        - 启用enforce-eager(在vLLM启动时加--enforce-eager)会强制禁用CUDA Graph, 所有前向计算都以"即时执行"(eager execution)方式进行. 即每次forward都直接调用PyTorch或底层kernel计算, 不做图录制或重放.
+
+    - 其他框架中使用
+        - PyTorch: 默认就是 eager 模式. torch.compile()是图模式.
+        - TensorRT-LLM: 使用 engine 编译, 本质也是静态图, 不支持真正意义上的 eager.
+        - HuggingFace Transformers + accelerate: 纯 eager, 无 graph 优化(所以比 vLLM 慢).
+
+
 - **Greedy Search**
     - 假设词表中有"a", "given", "human", "it", "must", "obey", "Okay", "orders", "robot", "the", ".", "EOS" 共12个token, 其中"EOS"表示终止token. Greedy Search
 
 - **all2all**
     - 在以vllm为代表的大模型推理框架中, all2all是一个关键的通信操作, 尤其在MoE模型的Expert parallel场景中起到了核心作用.
     - all2all的概念
-        - all2all是一种多GPU或多节点之间的数据交换模式, 其中每个GPU向其他的GPU发送数据, 并从所有其他的GPU接收数据, 与AllReduce AllGather BroadCast并列, 是分布式训练和推理中常见的集体通信操作.
+        - all2all是一种多GPU或多节点之间的数据交换模式, 其中每个GPU向其他的GPU发送数据, 并从所有其他的GPU接收数据, 与AllReduce/AllGather/BroadCast并列, 是分布式训练和推理中常见的集体通信操作.
     - all2all的意义
         - 在MoE模型里, 每个token被路由(routing)到特定的专家(expert)上进行计算, 不同的token会被分配到不同的专家, 为了实现高效的并行, 不同的专家会被分配到不同的GPU上, 即为expert parallel.
         - 在expert parallel的背景下, 当前GPU上的token可能需要到其他的GPU上进行计算, 计算完成后将结果传回, 这样的过程是由all2all实现的.
@@ -264,7 +283,10 @@
                     out = down_proj(h) # [d_ff] -> [d]
                     return out
             ```
+
+- **chunked prefill**
+    - 当prompt非常长(128k)时, 由于产生的KV cache太大, 一次性Prefill可能超出GPU显存, 从而导致显存碎片或OOM. 因此, 可以将prompt分成多个chunk(块), 逐块处理.
+    - 每块做一次partial prefill, 累积 KV Cache, 当最后一块处理完后, 再开始 decode.
+
+- **模型量化**
     
-
-
-
